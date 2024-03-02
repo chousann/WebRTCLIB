@@ -1,4 +1,5 @@
 class WebRTCComponent {
+
   constructor(id, config, iceconfig) {
     navigator.getUserMedia = navigator.getUserMedia || navigator.mozGetUserMedia || navigator.webkitGetUserMedia;
     window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
@@ -10,8 +11,10 @@ class WebRTCComponent {
     this.id = document.getElementById(id);
     this.config = config? config: this.config;
     this.peerConnCfg = iceconfig? iceconfig: this.peerConnCfg
+  }
 
-    this.room = prompt('Enter room name:'); //弹出一个输入窗口
+  init(roomid) {
+    this.room = roomid;//prompt('Enter room name:'); //弹出一个输入窗口
 
     this.wsc = new WebSocket(this.config.wssHost);
 
@@ -35,15 +38,8 @@ class WebRTCComponent {
         this.endCall();
       }
     };
-  }
 
-  init() {
-    this.id.innerHTML = `
-      <video id="remoteVideo" autoplay></video>
-      <video id="localVideo" autoplay muted></video>
-      <input id="videoCallButton" type="button" disabled value="Video Call"/>
-      <input id="endCallButton" type="button" disabled value="End Call"/>
-      `;
+    this.id.innerHTML = this.innerHTML;
     this.pageReady();
   }
 
@@ -52,8 +48,8 @@ class WebRTCComponent {
     if (navigator.getUserMedia) {
       this.videoCallButton = document.getElementById("videoCallButton");
       this.endCallButton = document.getElementById("endCallButton");
-      this.localVideo = document.getElementById('localVideo');
-      this.remoteVideo = document.getElementById('remoteVideo');
+      this.localVideo = document.getElementById(this.localVideoId);
+      this.remoteVideo = document.getElementById(this.remoteVideoId);
       this.videoCallButton.removeAttribute("disabled");
       this.videoCallButton.addEventListener("click", () => {
         this.initiateCall();
@@ -161,6 +157,14 @@ class WebRTCComponent {
     }
     if (this.remoteVideo) this.remoteVideo.src = "";
   };
+
+  setLocalVideoId(id) {
+    this.localVideoId = id;
+  }
+
+  setremoteVideoId(id) {
+    this.remoteVideoId = id
+  }
 }
 
 WebRTCComponent.prototype.id;
@@ -172,6 +176,8 @@ WebRTCComponent.prototype.config = {
 };
 WebRTCComponent.prototype.localVideoElem = null;
 WebRTCComponent.prototype.remoteVideoElem = null;
+WebRTCComponent.prototype.localVideoId = "localVideo";
+WebRTCComponent.prototype.remoteVideoId = "remoteVideo";
 WebRTCComponent.prototype.localVideoStream = null;
 WebRTCComponent.prototype.videoCallButton = null;
 WebRTCComponent.prototype.endCallButton = null;
@@ -182,6 +188,13 @@ WebRTCComponent.prototype.peerConnCfg = {
       [{ 'url': 'stun:stun.services.mozilla.com' },
       { 'url': 'stun:stun.l.google.com:19302' }]
 };
+
+WebRTCComponent.prototype.innerHTML = `
+  <video id="remoteVideo" autoplay></video>
+  <video id="localVideo" autoplay muted></video>
+  <input id="videoCallButton" type="button" disabled value="Video Call"/>
+  <input id="endCallButton" type="button" disabled value="End Call"/>
+`;
 
 
 WebRTCComponent.decorators = [
