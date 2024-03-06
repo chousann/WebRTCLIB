@@ -23,19 +23,31 @@ class WebRTCComponent {
     }
 
     this.wsc.onmessage = (evt) => {
-      var signal = null;
-      if (!this.peerConn) this.answerCall();
-      signal = JSON.parse(evt.data);
-      if (signal.sdp) {
-        console.log("Received SDP from remote peer.");
-        this.peerConn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-      }
-      else if (signal.candidate) {
-        console.log("Received ICECandidate from remote peer.");
-        this.peerConn.addIceCandidate(new RTCIceCandidate(signal.candidate));
-      } else if (signal.closeConnection) {
-        console.log("Received 'close call' signal from remote peer.");
-        this.endCall();
+      var signal = JSON.parse(evt.data);
+      switch(signal.type) {
+        case "sdp":
+          // 从远程对等端接收RemoteDescription（sdp）
+          console.log("Received SDP from remote peer.");
+          console.log(signal.sdp);
+          if (signal.sdp.type == "answer") {
+            this.peerConn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            break;
+          }
+          this.answerCall();
+          this.peerConn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          break;
+        case "candidate":
+          // 从远程对等端接收远程对等端的候选地址（candidate）
+          console.log("Received ICECandidate from remote peer.");
+          console.log(signal.candidate);
+          this.peerConn.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          break;
+        case "close":
+          console.log("Received 'close call' signal from remote peer.");
+          this.endCall();
+          break;
+        default:
+          break;
       }
     };
 
