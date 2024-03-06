@@ -19,7 +19,7 @@ class WebRTCComponent {
     this.wsc = new WebSocket(this.config.wssHost);
 
     this.wsc.onopen = () => {
-      this.wsc.send(JSON.stringify({ "create": this.room }));
+      this.wsc.send(JSON.stringify({ type: "create", room: this.room }));
     }
 
     this.wsc.onmessage = (evt) => {
@@ -55,7 +55,7 @@ class WebRTCComponent {
         this.initiateCall();
       });
       this.endCallButton.addEventListener("click", (evt) => {
-        this.wsc.send(JSON.stringify({ "closeConnection": true, "room": this.room }));
+        this.wsc.send(JSON.stringify({ type: "close", closeConnection: true, room: this.room }));
         this.endCall();
       });
     } else {
@@ -84,7 +84,7 @@ class WebRTCComponent {
   initiateCall() {
     this.prepareCall();
     // get the local stream, show it in the local video element and send it
-    navigator.getUserMedia({ "audio": true, "video": true },  (stream) => {
+    navigator.getUserMedia({ "audio": false, "video": true },  (stream) => {
       this.localVideoStream = stream;
       this.localVideo.srcObject = this.localVideoStream;
       this.peerConn.addStream(this.localVideoStream);
@@ -95,7 +95,7 @@ class WebRTCComponent {
   answerCall() {
     this.prepareCall();
     // get the local stream, show it in the local video element and send it
-    navigator.getUserMedia({ "audio": true, "video": true },  (stream) => {
+    navigator.getUserMedia({ "audio": false, "video": true },  (stream) => {
         this.localVideoStream = stream;
         this.localVideo.srcObject = this.localVideoStream;
         this.peerConn.addStream(this.localVideoStream);
@@ -109,7 +109,7 @@ class WebRTCComponent {
         var off = new RTCSessionDescription(offer);
         this.peerConn.setLocalDescription(new RTCSessionDescription(off),
           () => {
-            this.wsc.send(JSON.stringify({ "sdp": off, "room": this.room}));
+            this.wsc.send(JSON.stringify({ type: "sdp", sdp: off, room: this.room}));
           },
           function (error) { console.log(error); }
         );
@@ -123,7 +123,7 @@ class WebRTCComponent {
       (answer) => {
         var ans = new RTCSessionDescription(answer);
         this.peerConn.setLocalDescription(ans,  () => {
-            this.wsc.send(JSON.stringify({ "sdp": ans, "room": this.room }));
+            this.wsc.send(JSON.stringify({ type: "sdp", sdp: ans, room: this.room }));
         },
           function (error) { console.log(error); }
         );
@@ -134,7 +134,7 @@ class WebRTCComponent {
 
   onIceCandidateHandler(evt) {
     if (!evt || !evt.candidate) return;
-    this.wsc.send(JSON.stringify({ "candidate": evt.candidate, "room": this.room }));
+    this.wsc.send(JSON.stringify({ type: "candidate", candidate: evt.candidate, room: this.room }));
   };
   
   onAddStreamHandler(evt) {
