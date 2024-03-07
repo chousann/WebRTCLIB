@@ -77,19 +77,55 @@ class WebRTCComponent {
 
   prepareCall() {
     this.peerConn = new RTCPeerConnection(this.peerConnCfg);
+
+    // 收集candidates（候选地址）
+    // 客户端获取本地host地址（type：host）
+    // 客户端从STUN服务器获取srflx地址（type：srflx）
+    // 客户端从TURN服务器获取中继地址（type：relay）TODO
+    // candidates（候选地址）收集完成后回调此方法
     // send any ice candidates to the other peer
     this.peerConn.onicecandidate = (evt) => {
       this.onIceCandidateHandler(evt);
     };
+
+    this.peerConn.onicecandidateerror = (evt) => {
+      console.log("onicecandidateerror:");
+      console.log(evt);
+    };
+
+    // remotestream远程数据流到达时，回调此方法
     // once remote stream arrives, show it in the remote video element
     this.peerConn.onaddstream = (evt) => {
       this.onAddStreamHandler(evt);
     };
+
     this.peerConn.onconnectionstatechange = (ev) => {
+      console.log("connectionstatechange:");
+      console.log(ev.currentTarget);
       if(ev.currentTarget.connectionState === "disconnected"){
         this.endCall();
       }
     }
+
+    this.peerConn.oniceconnectionstatechange = (evt) => {
+      console.log("oniceconnectionstatechange:");
+      console.log(evt);
+    };
+
+    this.peerConn.onicegatheringstatechange = (evt) => {
+      console.log("onicegatheringstatechange:");
+      console.log(evt);
+    };
+
+    this.peerConn.onsignalingstatechange = (evt) => {
+      console.log("onsignalingstatechange:");
+      console.log(evt);
+    };
+
+    this.peerConn.onsignalingstatechange = (evt) => {
+      console.log("onsignalingstatechange:");
+      console.log(evt);
+    };
   };
 
   // run start(true) to initiate a call
@@ -121,6 +157,9 @@ class WebRTCComponent {
         var off = new RTCSessionDescription(offer);
         this.peerConn.setLocalDescription(new RTCSessionDescription(off),
           () => {
+            // 将LocalDescription（sdp）发送给远程对等端
+            console.log("将LocalDescription（sdp）发送给远程对等端");
+            console.log(off);
             this.wsc.send(JSON.stringify({ type: "sdp", sdp: off, room: this.room}));
           },
           function (error) { console.log(error); }
@@ -135,7 +174,9 @@ class WebRTCComponent {
       (answer) => {
         var ans = new RTCSessionDescription(answer);
         this.peerConn.setLocalDescription(ans,  () => {
-            this.wsc.send(JSON.stringify({ type: "sdp", sdp: ans, room: this.room }));
+          console.log("answer sdp 发送给远程对等端");
+          console.log(ans);
+          this.wsc.send(JSON.stringify({ type: "sdp", sdp: ans, room: this.room }));
         },
           function (error) { console.log(error); }
         );
@@ -145,11 +186,20 @@ class WebRTCComponent {
   };
 
   onIceCandidateHandler(evt) {
-    if (!evt || !evt.candidate) return;
-    this.wsc.send(JSON.stringify({ type: "candidate", candidate: evt.candidate, room: this.room }));
+    if (!evt || !evt.candidate) {
+      console.log("没有收集到candidate候选地址");
+      console.log(evt);
+      return;
+    } else{
+      console.log("收集到candidate候选地址：");
+      console.log(evt);
+      console.log("将收集到的candidate候选地址发送给远程对等端");
+      this.wsc.send(JSON.stringify({ type: "candidate", candidate: evt.candidate, room: this.room }));
+    }
   };
   
   onAddStreamHandler(evt) {
+    console.log("remotestream远程数据流到达");
     this.videoCallButton.setAttribute("disabled", true);
     this.endCallButton.removeAttribute("disabled");
     // set remote video stream as source for remote video HTML5 element
