@@ -1,7 +1,7 @@
 class WebRTCComponent {
 
   constructor(id, config, iceconfig) {
-    navigator.getUserMedia = navigator.getUserMedia || navigator.mozGetUserMedia || navigator.webkitGetUserMedia;
+    navigator.getUserMedia = navigator.mediaDevices.getUserMedia || navigator.getUserMedia || navigator.mozGetUserMedia || navigator.webkitGetUserMedia;
     window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
     window.RTCIceCandidate = window.RTCIceCandidate || window.mozRTCIceCandidate || window.webkitRTCIceCandidate;
     window.RTCSessionDescription = window.RTCSessionDescription || window.mozRTCSessionDescription || window.webkitRTCSessionDescription;
@@ -11,6 +11,297 @@ class WebRTCComponent {
     this.id = document.getElementById(id);
     this.config = config? config: this.config;
     this.peerConnCfg = iceconfig? iceconfig: this.peerConnCfg
+  }
+
+  create_call_ws(roomid) {
+    this.room = roomid;//prompt('Enter room name:'); //弹出一个输入窗口
+
+    var wsc = new WebSocket(this.config.wssHost);
+
+    wsc.onopen = () => {
+      this.wsc.send(JSON.stringify({ type: "create", room: this.room }));
+    }
+
+    wsc.onmessage = (evt) => {
+      var signal = JSON.parse(evt.data);
+      switch(signal.type) {
+        case "sdp":
+          // 从远程对等端接收RemoteDescription（sdp）
+          console.log("Received SDP from remote peer.");
+          console.log(signal.sdp);
+          if (signal.sdp.type == "answer") {
+            this.peerConn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            break;
+          }
+          break;
+        case "candidate":
+          // 从远程对等端接收远程对等端的候选地址（candidate）
+          console.log("Received ICECandidate from remote peer.");
+          console.log(signal.candidate);
+          this.peerConn.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          break;
+        case "close":
+          console.log("Received 'close call' signal from remote peer.");
+          this.endCall();
+          break;
+        default:
+          break;
+      }
+    };
+    this.wsc = wsc;
+    this.id.innerHTML = this.innerHTML;
+    this.pageReady();
+  }
+
+  create_receive_ws(roomid) {
+    this.room = roomid;//prompt('Enter room name:'); //弹出一个输入窗口
+
+    var wsc = new WebSocket(this.config.wssHost);
+
+    wsc.onopen = () => {
+      this.wsc.send(JSON.stringify({ type: "create", room: this.room }));
+    }
+
+    wsc.onmessage = (evt) => {
+      var signal = JSON.parse(evt.data);
+      switch(signal.type) {
+        case "sdp":
+          // 从远程对等端接收RemoteDescription（sdp）
+          console.log("Received SDP from remote peer.");
+          console.log(signal.sdp);
+          if (signal.sdp.type == "offer") {
+            this.receive_offer_sdp(signal.sdp, this.peerConnCfg);
+          }
+          break;
+        case "candidate":
+          // 从远程对等端接收远程对等端的候选地址（candidate）
+          this.receive_candidate(signal.candidate);
+          break;
+        case "close":
+          console.log("Received 'close call' signal from remote peer.");
+          this.endCall();
+          break;
+        default:
+          break;
+      }
+    };
+    this.wsc = wsc;
+    this.id.innerHTML = this.innerHTML;
+    this.pageReady();
+  }
+
+  async getLocalStream(constraints) {
+    try {
+      // get the local stream, show it in the local video element and send it
+      const localstream = await navigator.mediaDevices.getUserMedia(constraints);
+      return localstream;
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+    }
+  }
+
+  createRTCPeerConnection(rtcConfiguration) {
+
+    var rtcPeerConnection = new RTCPeerConnection(rtcConfiguration);
+
+    // 收集candidates（候选地址）
+    // 客户端获取本地host地址（type：host）
+    // 客户端从STUN服务器获取srflx地址（type：srflx）
+    // 客户端从TURN服务器获取中继地址（type：relay）TODO
+    // candidates（候选地址）收集完成后回调此方法
+    // send any ice candidates to the other peer
+    rtcPeerConnection.onicecandidate = (evt) => {
+      this.onIceCandidateHandler(evt);
+    };
+
+    rtcPeerConnection.onicecandidateerror = (evt) => {
+      console.log("onicecandidateerror:");
+      console.log(evt);
+    };
+
+    // remotestream远程数据流到达时，回调此方法
+    // once remote stream arrives, show it in the remote video element
+    rtcPeerConnection.onaddstream = (evt) => {
+      this.onAddStreamHandler(evt);
+    };
+
+    rtcPeerConnection.onconnectionstatechange = (ev) => {
+      console.log("connectionstatechange:");
+      console.log(ev.currentTarget);
+      if(ev.currentTarget.connectionState === "disconnected"){
+        this.endCall();
+      }
+    }
+
+    rtcPeerConnection.oniceconnectionstatechange = (evt) => {
+      console.log("oniceconnectionstatechange:");
+      console.log(evt);
+    };
+
+    rtcPeerConnection.onicegatheringstatechange = (evt) => {
+      console.log("onicegatheringstatechange:");
+      console.log(evt);
+    };
+
+    rtcPeerConnection.onsignalingstatechange = (evt) => {
+      console.log("onsignalingstatechange:");
+      console.log(evt);
+    };
+
+    rtcPeerConnection.onsignalingstatechange = (evt) => {
+      console.log("onsignalingstatechange:");
+      console.log(evt);
+    };
+
+    return rtcPeerConnection;
+  }
+
+  async createAndSetLocalOffer(rtcPeerConnection) {
+    var rtcSessionDescriptionInit;
+    try {
+      rtcSessionDescriptionInit = await rtcPeerConnection.createOffer();
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+    }
+
+    var offer = new RTCSessionDescription(rtcSessionDescriptionInit);
+    try {
+      await rtcPeerConnection.setLocalDescription(new RTCSessionDescription(offer));
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+    }
+
+    return offer;
+  };
+
+  sendOffer(offer) {
+    // 将LocalDescription（sdp）发送给远程对等端
+    console.log("将LocalDescription（sdp）发送给远程对等端");
+    console.log(offer);
+    this.wsc.send(JSON.stringify({ type: "sdp", sdp: offer, room: this.room}));
+  }
+
+  async call() {
+
+    const constraints = window.constraints = {
+      audio: false,
+      video: true
+    };
+
+    const localstream = await this.getLocalStream(constraints);
+
+    this.localVideoStream = localstream;
+    this.localVideo.srcObject = this.localVideoStream;
+
+    var rtcPeerConnection = this.createRTCPeerConnection(this.peerConnCfg);
+
+    rtcPeerConnection.addStream(localstream);
+
+    this.peerConn = rtcPeerConnection;
+
+    var offer = await this.createAndSetLocalOffer(rtcPeerConnection);
+
+    this.sendOffer(offer);
+  }
+
+  async createAnswerAndSetLocalSDP(rtcPeerConnection) {
+
+    var rtcSessionDescriptionInit;
+    try {
+      rtcSessionDescriptionInit = await rtcPeerConnection.createAnswer();
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+    }
+
+    var answer = new RTCSessionDescription(rtcSessionDescriptionInit);
+    try {
+      await rtcPeerConnection.setLocalDescription(new RTCSessionDescription(answer));
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+    }
+
+    return answer;
+  };
+
+  async receive_offer_sdp(offer, rtcPeerConnection) {
+
+    var rtcPeerConnection = this.createRTCPeerConnection(rtcPeerConnection);
+
+    rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+    this.peerConn = rtcPeerConnection;
+
+    const constraints = window.constraints = {
+      audio: false,
+      video: true
+    };
+
+    const localstream = await this.getLocalStream(constraints);
+
+    this.localVideoStream = localstream;
+    this.localVideo.srcObject = this.localVideoStream;
+
+    rtcPeerConnection.addStream(localstream);
+
+    var answer = await this.createAnswerAndSetLocalSDP(rtcPeerConnection);
+
+    console.log("answer sdp 发送给远程对等端");
+    console.log(answer);
+    this.wsc.send(JSON.stringify({ type: "sdp", sdp: answer, room: this.room }));
+  }
+
+  receive_candidate(candidate) {
+    // 从远程对等端接收远程对等端的候选地址（candidate）
+    console.log("Received ICECandidate from remote peer.");
+    console.log(candidate);
+    this.peerConn.addIceCandidate(new RTCIceCandidate(candidate));
+  }
+  ws_receive_onmessage(evt) {
+    var signal = JSON.parse(evt.data);
+    switch(signal.type) {
+      case "sdp":
+        // 从远程对等端接收RemoteDescription（sdp）
+        console.log("Received SDP from remote peer.");
+        console.log(signal.sdp);
+        if (signal.sdp.type == "offer") {
+          this.receive_offer_sdp(signal.sdp, this.peerConnCfg);
+        }
+        break;
+      case "candidate":
+        // 从远程对等端接收远程对等端的候选地址（candidate）
+        this.receive_candidate(signal.candidate);
+        break;
+      case "close":
+        console.log("Received 'close call' signal from remote peer.");
+        this.endCall();
+        break;
+      default:
+        break;
+    }
+  }
+  async receive() {
+
+    const config = { "audio": false, "video": true };
+
+    const localstream = await this.getLocalStream(config);
+
+    this.localVideoStream = localstream;
+    this.localVideo.srcObject = this.localVideoStream;
+
+    var rtcPeerConnection = this.createRTCPeerConnection(this.peerConnCfg, localstream);
+
+    rtcPeerConnection.addStream(localstream);
+
+    this.peerConn = rtcPeerConnection;
+
+    var offer = await this.createAndSetLocalOffer(rtcPeerConnection);
+
+    this.sendOffer(offer);
   }
 
   init(roomid) {
@@ -64,7 +355,7 @@ class WebRTCComponent {
       this.remoteVideo = document.getElementById(this.remoteVideoId);
       this.videoCallButton.removeAttribute("disabled");
       this.videoCallButton.addEventListener("click", () => {
-        this.initiateCall();
+        this.call();
       });
       this.endCallButton.addEventListener("click", (evt) => {
         this.wsc.send(JSON.stringify({ type: "close", closeConnection: true, room: this.room }));
