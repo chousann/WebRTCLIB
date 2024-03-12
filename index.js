@@ -1,6 +1,6 @@
 class WebRTCComponent {
 
-  constructor(id, config, iceconfig, signalingServerConnection) {
+  constructor(pageConfig, config, iceconfig) {
     navigator.getUserMedia = navigator.mediaDevices.getUserMedia || navigator.getUserMedia || navigator.mozGetUserMedia || navigator.webkitGetUserMedia;
     window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
     window.RTCIceCandidate = window.RTCIceCandidate || window.mozRTCIceCandidate || window.webkitRTCIceCandidate;
@@ -8,84 +8,104 @@ class WebRTCComponent {
     window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || window.mozSpeechRecognition
             || window.msSpeechRecognition || window.oSpeechRecognition;
 
-    this.id = document.getElementById(id);
-    this.config = config? config: this.config;
     this.peerConnCfg = iceconfig? iceconfig: this.peerConnCfg
+    this.pageConfig = pageConfig;
+
+    var signalingServerConnection = new SignalingServerConnection(config);
+
     this.signalingServerConnection = signalingServerConnection;
+
+    this.handleSignalingServerChannel(this.signalingServerConnection);
+    this.pageReady(pageConfig);
   }
 
-  create_call_ws(roomid) {
-    this.room = roomid;//prompt('Enter room name:'); //弹出一个输入窗口
 
-    //var wsc = new WebSocket(this.config.wssHost);
-
-    this.signalingServerConnection.onopen = () => {
-      this.signalingServerConnection.send(JSON.stringify({ type: "create", room: this.room }));
+  handleSignalingServerChannel(signalingServerConnection) {
+    signalingServerConnection.onopen = (event) => {
+      this.onOpenHandle(event);
     }
 
-    this.signalingServerConnection.onmessage = (evt) => {
-      var signal = JSON.parse(evt.data);
-      switch(signal.type) {
-        case "sdp":
-          // 从远程对等端接收RemoteDescription（sdp）
-          console.log("Received SDP from remote peer.");
-          console.log(signal.sdp);
+    signalingServerConnection.onmessage = (event) => {
+      this.onMessageHandle(event);
+    };
+  }
+
+  pageReady(pageConfig) {
+    // check browser WebRTC availability 
+    if (navigator.mediaDevices.getUserMedia) {
+      this.videoCallButton = document.getElementById(pageConfig.callButtonID);
+      this.endCallButton = document.getElementById(pageConfig.endButtonID);
+      this.localVideo = document.getElementById(pageConfig.localStreamID);
+      this.remoteVideo = document.getElementById(pageConfig.remoteStreamID);
+      this.videoCallButton.removeAttribute("disabled");
+      this.videoCallButton.addEventListener("click", () => {
+        this.call();
+      });
+      this.endCallButton.addEventListener("click", (evt) => {
+        this.signalingServerConnection.send(JSON.stringify({ type: "close", closeConnection: true, room: this.pageConfig.roomID }));
+        this.endCall();
+      });
+    } else {
+      alert("Sorry, your browser does not support WebRTC!")
+    }
+  };
+
+  async call() {
+
+    var rtcPeerConnection = this.createRTCPeerConnection(this.peerConnCfg);
+
+    this.peerConn = rtcPeerConnection;
+
+    const constraints = window.constraints = {
+      audio: false,
+      video: true
+    };
+
+    const localstream = await this.getLocalStream(constraints);
+    rtcPeerConnection.addStream(localstream);
+
+    this.localVideoStream = localstream;
+    this.localVideo.srcObject = this.localVideoStream;
+
+    var offer = await this.createAndSetLocalOffer(rtcPeerConnection);
+
+    this.sendOffer(offer);
+  }
+
+  // handleSignalingServerChannel onOpenHandle
+  onOpenHandle(event) {
+    this.signalingServerConnection.send(JSON.stringify({ type: "create", room: this.pageConfig.roomID }));
+  }
+  // handleSignalingServerChannel onMessageHandle
+  onMessageHandle(event) {
+      
+    var signal = JSON.parse(event.data);
+    switch(signal.type) {
+      case "sdp":
+        // 从远程对等端接收RemoteDescription（sdp）
+        console.log("Received SDP from remote peer.");
+        console.log(signal.sdp);
+        if (this.pageConfig.type == 'call') {
           if (signal.sdp.type == "answer") {
             this.peerConn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           }
-          break;
-        case "candidate":
-          // 从远程对等端接收远程对等端的候选地址（candidate）
-          this.receive_candidate(signal.candidate);
-          break;
-        case "close":
-          console.log("Received 'close call' signal from remote peer.");
-          this.endCall();
-          break;
-        default:
-          break;
-      }
-    };
-    //this.signalingServerConnection = signalingServerConnection;
-    this.id.innerHTML = this.innerHTML;
-    this.pageReady();
-  }
-
-  create_receive_ws(roomid) {
-    this.room = roomid;//prompt('Enter room name:'); //弹出一个输入窗口
-
-    //var wsc = new WebSocket(this.config.wssHost);
-
-    this.signalingServerConnection.onopen = () => {
-      this.signalingServerConnection.send(JSON.stringify({ type: "create", room: this.room }));
-    }
-
-    this.signalingServerConnection.onmessage = (evt) => {
-      var signal = JSON.parse(evt.data);
-      switch(signal.type) {
-        case "sdp":
-          // 从远程对等端接收RemoteDescription（sdp）
-          console.log("Received SDP from remote peer.");
-          console.log(signal.sdp);
+        } else {
           if (signal.sdp.type == "offer") {
             this.receive_offer_sdp(signal.sdp, this.peerConnCfg);
-          }
-          break;
-        case "candidate":
-          // 从远程对等端接收远程对等端的候选地址（candidate）
-          this.receive_candidate(signal.candidate);
-          break;
-        case "close":
-          console.log("Received 'close call' signal from remote peer.");
-          this.endCall();
-          break;
-        default:
-          break;
-      }
-    };
-    //this.wsc = wsc;
-    this.id.innerHTML = this.innerHTML;
-    this.pageReady();
+          } 
+        }
+        break;
+      case "candidate":
+        // 从远程对等端接收远程对等端的候选地址（candidate）
+        this.receive_candidate(signal.candidate);
+        break;
+      case "close":
+        console.log("Received 'close call' signal from remote peer.");
+        this.endCall();
+        break;
+      default:
+        break;
+    }
   }
 
   async getLocalStream(constraints) {
@@ -182,36 +202,14 @@ class WebRTCComponent {
     // 将LocalDescription（sdp）发送给远程对等端
     console.log("将LocalDescription（sdp）发送给远程对等端");
     console.log(offer);
-    this.signalingServerConnection.send(JSON.stringify({ type: "sdp", sdp: offer, room: this.room}));
+    this.signalingServerConnection.send(JSON.stringify({ type: "sdp", sdp: offer, room: this.pageConfig.roomID}));
   }
 
   sendAnswer(answer) {
     // 将LocalDescription（sdp）发送给远程对等端
     console.log("answer sdp 发送给远程对等端");
     console.log(answer);
-    this.signalingServerConnection.send(JSON.stringify({ type: "sdp", sdp: answer, room: this.room }));
-  }
-
-  async call() {
-
-    var rtcPeerConnection = this.createRTCPeerConnection(this.peerConnCfg);
-
-    this.peerConn = rtcPeerConnection;
-
-    const constraints = window.constraints = {
-      audio: false,
-      video: true
-    };
-
-    const localstream = await this.getLocalStream(constraints);
-    rtcPeerConnection.addStream(localstream);
-
-    this.localVideoStream = localstream;
-    this.localVideo.srcObject = this.localVideoStream;
-
-    var offer = await this.createAndSetLocalOffer(rtcPeerConnection);
-
-    this.sendOffer(offer);
+    this.signalingServerConnection.send(JSON.stringify({ type: "sdp", sdp: answer, room: this.pageConfig.roomID }));
   }
 
   async createAnswerAndSetLocalSDP(rtcPeerConnection) {
@@ -268,49 +266,6 @@ class WebRTCComponent {
     console.log(candidate);
     this.peerConn.addIceCandidate(new RTCIceCandidate(candidate));
   }
-  ws_receive_onmessage(evt) {
-    var signal = JSON.parse(evt.data);
-    switch(signal.type) {
-      case "sdp":
-        // 从远程对等端接收RemoteDescription（sdp）
-        console.log("Received SDP from remote peer.");
-        console.log(signal.sdp);
-        if (signal.sdp.type == "offer") {
-          this.receive_offer_sdp(signal.sdp, this.peerConnCfg);
-        }
-        break;
-      case "candidate":
-        // 从远程对等端接收远程对等端的候选地址（candidate）
-        this.receive_candidate(signal.candidate);
-        break;
-      case "close":
-        console.log("Received 'close call' signal from remote peer.");
-        this.endCall();
-        break;
-      default:
-        break;
-    }
-  }
-
-  pageReady() {
-    // check browser WebRTC availability 
-    if (navigator.getUserMedia) {
-      this.videoCallButton = document.getElementById("videoCallButton");
-      this.endCallButton = document.getElementById("endCallButton");
-      this.localVideo = document.getElementById(this.localVideoId);
-      this.remoteVideo = document.getElementById(this.remoteVideoId);
-      this.videoCallButton.removeAttribute("disabled");
-      this.videoCallButton.addEventListener("click", () => {
-        this.call();
-      });
-      this.endCallButton.addEventListener("click", (evt) => {
-        this.signalingServerConnection.send(JSON.stringify({ type: "close", closeConnection: true, room: this.room }));
-        this.endCall();
-      });
-    } else {
-      alert("Sorry, your browser does not support WebRTC!")
-    }
-  };
 
   onIceCandidateHandler(evt) {
     if (!evt || !evt.candidate) {
@@ -321,7 +276,7 @@ class WebRTCComponent {
       console.log("收集到candidate候选地址：");
       console.log(evt);
       console.log("将收集到的candidate候选地址发送给远程对等端");
-      this.signalingServerConnection.send(JSON.stringify({ type: "candidate", candidate: evt.candidate, room: this.room }));
+      this.signalingServerConnection.send(JSON.stringify({ type: "candidate", candidate: evt.candidate, room: this.pageConfig.roomID }));
     }
   };
   
@@ -358,11 +313,6 @@ class WebRTCComponent {
 
 WebRTCComponent.prototype.id;
 
-WebRTCComponent.prototype.room;
-WebRTCComponent.prototype.config = {
-  wssHost: 'wss://moly.ngrok2.xiaomiqiu.cn/signaling'
-  // wssHost: 'wss://example.com/myWebSocket'
-};
 WebRTCComponent.prototype.localVideoElem = null;
 WebRTCComponent.prototype.remoteVideoElem = null;
 WebRTCComponent.prototype.localVideoId = "localVideo";
@@ -376,6 +326,15 @@ WebRTCComponent.prototype.peerConnCfg = {
     'iceServers':
       [{ 'url': 'stun:stun.services.mozilla.com' },
       { 'url': 'stun:stun.l.google.com:19302' }]
+};
+WebRTCComponent.prototype.pageConfig = {
+  type: 'call',
+  roomID: 'room',
+  id: 'id',
+  callButtonID: 'local_button',
+  endButtonID: 'end_button',
+  localStreamID: 'local_stream',
+  remoteStreamID: 'remote_stream'
 };
 WebRTCComponent.prototype.signalingServerConnection = null;
 
@@ -408,8 +367,6 @@ class SignalingServerConnection {
 
   constructor(config) {
     this.config = config? config: this.config;
-
-    this.room = config.roomid;//prompt('Enter room name:'); //弹出一个输入窗口
 
     var wsc = new WebSocket(this.config.wssHost);
 
