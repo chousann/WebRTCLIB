@@ -394,22 +394,22 @@ class SignalingServerConnection {
     this.wsc = wsc;
   }
 
-  onopen = (event) => {
+  onopen(event) {
     console.log(event);
     return event;
   }
 
-  onerror = (event) => {
+  onerror(event) {
     console.log(event);
     return event;
   }
 
-  onclose = (event) => {
+  onclose(event) {
     console.log(event);
     return event;
   }
 
-  onmessage = (event) => {
+  onmessage(event) {
     console.log(event);
     return event;
   }
