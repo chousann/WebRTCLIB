@@ -39,7 +39,7 @@ class WebRTCComponent {
       this.remoteVideo = document.getElementById(pageConfig.remoteStreamID);
       this.videoCallButton.removeAttribute("disabled");
       this.videoCallButton.addEventListener("click", () => {
-        this.call();
+        this.executeWebRTCFlowOffer();
       });
       this.endCallButton.addEventListener("click", (evt) => {
         this.signalingServerConnection.send(JSON.stringify({ type: "close", closeConnection: true, room: this.pageConfig.roomID }));
@@ -50,34 +50,72 @@ class WebRTCComponent {
     }
   };
 
-  async call() {
+  async executeWebRTCFlowOffer(rtcConfiguration) {
 
-    var rtcPeerConnection = this.createRTCPeerConnection(this.peerConnCfg);
+    var rtcPeerConnection = new RTCPeerConnection(rtcConfiguration);
+
+    this.addWebRTCEventListener(rtcPeerConnection);
 
     this.peerConn = rtcPeerConnection;
+    
+    rtcPeerConnection.addStream(await this.getLocalStream());
 
-    const constraints = window.constraints = {
-      audio: false,
-      video: true
-    };
+    var offerRTCSessionDescriptionInit;
+    try {
+      offerRTCSessionDescriptionInit = await rtcPeerConnection.createOffer();
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+      throw exception;
+    }
 
-    const localstream = await this.getLocalStream(constraints);
-    rtcPeerConnection.addStream(localstream);
+    var offer = new RTCSessionDescription(offerRTCSessionDescriptionInit);
+    try {
+      await rtcPeerConnection.setLocalDescription(offer);
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+      throw exception;
+    }
 
-    this.localVideoStream = localstream;
-    this.localVideo.srcObject = this.localVideoStream;
 
-    var offer = await this.createAndSetLocalOffer(rtcPeerConnection);
+    this.sendOfferToSignalingServer(offer);
 
-    this.sendOffer(offer);
+    return rtcPeerConnection;
   }
 
-  // handleSignalingServerChannel onOpenHandle
-  onOpenHandle(event) {
-    this.signalingServerConnection.send(JSON.stringify({ type: "create", room: this.pageConfig.roomID }));
+  async executeWebRTCFlowAnswer(offer, rtcConfiguration) {
+    var rtcPeerConnection = new RTCPeerConnection(rtcConfiguration);
+
+    this.addWebRTCEventListener(rtcPeerConnection);
+
+    this.peerConn = rtcPeerConnection;
+    
+    rtcPeerConnection.addStream(await this.getLocalStream());
+    rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+    var answerRTCSessionDescriptionInit;
+    try {
+      answerRTCSessionDescriptionInit = await rtcPeerConnection.createAnswer();
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+      throw exception;
+    }
+
+    var answer = new RTCSessionDescription(answerRTCSessionDescriptionInit);
+    try {
+      await rtcPeerConnection.setLocalDescription(answer);
+    } catch (exception) {
+      console.log(exception);
+      alert(exception);
+      throw exception;
+    }
+
+    this.sendAnswerToSignalingServer(answer);
   }
-  // handleSignalingServerChannel onMessageHandle
-  onMessageHandle(event) {
+
+  async onMessageHandle(event) {
 
     var signal = JSON.parse(event.data);
     switch (signal.type) {
@@ -91,7 +129,7 @@ class WebRTCComponent {
           }
         } else {
           if (signal.sdp.type == "offer") {
-            this.receive_offer_sdp(signal.sdp, this.peerConnCfg);
+            this.executeWebRTCFlowAnswer(signal.sdp, this.peerConnCfg);
           }
         }
         break;
@@ -108,10 +146,22 @@ class WebRTCComponent {
     }
   }
 
-  async getLocalStream(constraints) {
+  // handleSignalingServerChannel onOpenHandle
+  onOpenHandle(event) {
+    this.signalingServerConnection.send(JSON.stringify({ type: "create", room: this.pageConfig.roomID }));
+  }
+
+  async getLocalStream() {
+    const constraints = window.constraints = {
+      audio: false,
+      video: true
+    };
     try {
       // get the local stream, show it in the local video element and send it
-      const localstream = await navigator.mediaDevices.getUserMedia(constraints);
+      //const localstream = await navigator.mediaDevices.getUserMedia(constraints);
+      const localstream = await navigator.mediaDevices.getDisplayMedia();
+      this.localVideoStream = localstream;
+      this.localVideo.srcObject = this.localVideoStream;
       return localstream;
     } catch (exception) {
       console.log(exception);
@@ -120,10 +170,7 @@ class WebRTCComponent {
     }
   }
 
-  createRTCPeerConnection(rtcConfiguration) {
-
-    var rtcPeerConnection = new RTCPeerConnection(rtcConfiguration);
-
+  addWebRTCEventListener(rtcPeerConnection) {
     // 收集candidates（候选地址）
     // 客户端获取本地host地址（type：host）
     // 客户端从STUN服务器获取srflx地址（type：srflx）
@@ -173,91 +220,20 @@ class WebRTCComponent {
       console.log(evt);
     };
 
-    return rtcPeerConnection;
   }
 
-  async createAndSetLocalOffer(rtcPeerConnection) {
-    var offerRTCSessionDescriptionInit;
-    try {
-      offerRTCSessionDescriptionInit = await rtcPeerConnection.createOffer();
-    } catch (exception) {
-      console.log(exception);
-      alert(exception);
-      throw exception;
-    }
-
-    var offer = new RTCSessionDescription(offerRTCSessionDescriptionInit);
-    try {
-      await rtcPeerConnection.setLocalDescription(offer);
-    } catch (exception) {
-      console.log(exception);
-      alert(exception);
-      throw exception;
-    }
-
-    return offer;
-  };
-
-  sendOffer(offer) {
+  sendOfferToSignalingServer(offer) {
     // 将LocalDescription（sdp）发送给远程对等端
     console.log("将LocalDescription（sdp）发送给远程对等端");
     console.log(offer);
     this.signalingServerConnection.send(JSON.stringify({ type: "sdp", sdp: offer, room: this.pageConfig.roomID }));
   }
 
-  sendAnswer(answer) {
+  sendAnswerToSignalingServer(answer) {
     // 将LocalDescription（sdp）发送给远程对等端
     console.log("answer sdp 发送给远程对等端");
     console.log(answer);
     this.signalingServerConnection.send(JSON.stringify({ type: "sdp", sdp: answer, room: this.pageConfig.roomID }));
-  }
-
-  async createAnswerAndSetLocalSDP(rtcPeerConnection) {
-
-    var answerRTCSessionDescriptionInit;
-    try {
-      answerRTCSessionDescriptionInit = await rtcPeerConnection.createAnswer();
-    } catch (exception) {
-      console.log(exception);
-      alert(exception);
-      throw exception;
-    }
-
-    var answer = new RTCSessionDescription(answerRTCSessionDescriptionInit);
-    try {
-      await rtcPeerConnection.setLocalDescription(answer);
-    } catch (exception) {
-      console.log(exception);
-      alert(exception);
-      throw exception;
-    }
-
-    return answer;
-  };
-
-  async receive_offer_sdp(offer, rtcConfiguration) {
-
-    var rtcPeerConnection = this.createRTCPeerConnection(rtcConfiguration);
-
-    rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-
-    this.peerConn = rtcPeerConnection;
-
-    const constraints = window.constraints = {
-      audio: false,
-      video: true
-    };
-
-    const localstream = await this.getLocalStream(constraints);
-
-    this.localVideoStream = localstream;
-    this.localVideo.srcObject = this.localVideoStream;
-
-    rtcPeerConnection.addStream(localstream);
-
-    var answer = await this.createAnswerAndSetLocalSDP(rtcPeerConnection);
-
-    this.sendAnswer(answer);
   }
 
   receive_candidate(candidate) {
@@ -519,12 +495,6 @@ class WebRTCDataChannelComponent {
     rtcPeerConnection.onicecandidateerror = (evt) => {
       console.log("onicecandidateerror:");
       console.log(evt);
-    };
-
-    // remotestream远程数据流到达时，回调此方法
-    // once remote stream arrives, show it in the remote video element
-    rtcPeerConnection.onaddstream = (evt) => {
-      this.onAddStreamHandler(evt);
     };
 
     rtcPeerConnection.onconnectionstatechange = (ev) => {
